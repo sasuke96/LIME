@@ -100,3 +100,104 @@ def accuracy_deviation(actual, predicted):
         cum_dev += np.abs(predq - actualq)
         lower = upper
     return cum_dev/(10*avg_rate)
+
+import mls_spy as spy
+
+sc, sqlContext = spy.inits.init_spark(queue='csmlds',
+                                      executor_memory='25g',
+                                      initial_executors=20,
+                                      min_executors=20,
+                                      driver_memory='25g',
+                                      other_args='--conf spark.driver.maxResultSize=50g')
+
+
+import time
+from pyspark.sql import functions as f
+from pyspark.sql.window import Window
+import pandas as pd
+from pyspark.sql.types import *
+from datetime import date
+from datetime import datetime,timedelta
+from sklearn import metrics
+from pyspark.ml.feature import Bucketizer
+import pandas as pd
+import os
+
+
+# reading scaled dev data
+data=sqlContext.read.parquet(os.path.realpath("/axp/buanalytics/csmlds/dev/Vishesh/SOW/Data/pre_processing_data/Modeling_attempt1/Scaled_data/dev/"))
+
+cols=[
+ 's_bal',
+ 's2_bal',
+ 'n_incr',
+ 'n_incr_10',
+ 'n_incr_25',
+ 'n_decr_10',
+ 'n_decr_25',
+ 'max_neg',
+ 'dif',
+ 's_dif',
+ 's2_dif',
+ 'pre_bal',
+ 'n',
+ 'ave_bal',
+ 'std_bal',
+ 'blstd01',
+ 'blstdave',
+ 'bal01ave',
+ 'bal01max',
+ 'incr_pct',
+ 'incr_10',
+ 'incr_25',
+ 'decr_10',
+ 'decr_25',
+ 'max_dif',
+ 'ave_dif',
+ 'std_dif',
+ 'dfstdave',
+ 'dfmaxave',
+ 'switch_pct',
+ 'max_neg_rel',
+ 'max_neg12_rel',
+ 'ave_util',
+ 'max_util',
+ 'std_util',
+ 'ave_line',
+ 'max_line',
+ 'curr_line',
+ 'n_util_75_3mn',
+ 'n_util_75_6mn',
+ 'n_util_75_12mn',
+ 'n_util_25_12mn',
+ 'no_line_incr',
+ 'no_line_decr',
+ 'max_line_incr',
+ 'max_line_decr',
+ 'per_line_incr',
+ 'dif_bal',
+ 'no_del',
+ 'no_30',
+ 'no_curr',
+ 'currtodel',
+ 'no30curr',
+ 'max_age']
+
+num_obs = data.count()
+num_grps = 10
+final=pd.DataFrame()
+
+for col in cols:
+    data2=data.withColumn('row_nbr',f.row_number().over(Window.orderBy(f.col(col).asc())))
+    data2=data2.withColumn("band",f.floor(f.col('row_nbr')*num_grps/(num_obs+1)))
+    rp=data2.groupby('band').agg(f.avg(col).alias('Avg'),f.min(col).alias('min'),\
+                            f.max(col).alias('max'),
+                             f.count('*').alias('num_obs')\
+                            ,f.avg('Avg_pd').alias('Avg_dependent_variable'))
+    out=rp.toPandas()
+    out['column']=col
+    print(col)
+    final=final.append(out)
+
+
+final.to_csv('/axp/buanalytics/csmlds/dev/Vishesh/SOW/Experiments/RankNplot/dev_rnp_2.csv',index=False)
